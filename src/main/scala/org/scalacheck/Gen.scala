@@ -756,4 +756,38 @@ object Gen {
   ): Gen[R] = arbitrary[T1] flatMap {
     t => resultOf(f(t, _:T2, _:T3, _:T4, _:T5, _:T6, _:T7, _:T8, _:T9))
   }
+
+  private[scalacheck] object Random {
+
+    def boolVariant(b: Boolean, r: scala.util.Random): scala.util.Random = {
+      val x = r.nextLong()
+      val y = r.nextLong()
+      new scala.util.Random(if(b) y else x)
+    }
+
+    def chop(n: Int): Int = n % 2
+
+    def even(n: Int): Boolean = n % 2 == 0
+
+    def chip(finished: Boolean, n: Int, s: scala.util.Random): scala.util.Random = boolVariant(finished, boolVariant(even(n), s))
+
+    def stop(n: Int): Boolean = n <= 1
+
+    def bigNatVariant(n: Int, r: scala.util.Random): scala.util.Random =
+      if(stop(n)) chip(true, n, r)
+      else bigNatVariant(chop(n), chip(false, n, r))
+
+    def natVariant(n: Int, r: scala.util.Random): scala.util.Random =
+      if(stop(n)) chip(true, n, r)
+      else bigNatVariant(n, r)
+
+    def variantRandom(n: Int, r: scala.util.Random): scala.util.Random =
+      if (n >= 1) natVariant(n - 1, boolVariant(false, r))
+      else if(n == 0) natVariant(0, boolVariant(true, r))
+      else bigNatVariant(-n, boolVariant(true, r))
+  }
+
+  def variant[T](n: Int): Gen[T] => Gen[T] = g => gen { p =>
+    r(g(p.withRng(Random.variantRandom(n, p.rng))))
+  }
 }
