@@ -59,7 +59,7 @@ object Arbitrary extends ArbitraryLowPriority with ArbitraryArities
 
 /** separate trait to have same priority as ArbitraryArities */
 private[scalacheck] sealed trait ArbitraryLowPriority{
-  import Gen.{const, choose, sized, frequency, oneOf, buildableOf, resize}
+  import Gen.{const, choose, sized, frequency, oneOf, buildableOf, resize, promote}
   import collection.{immutable, mutable}
   import java.util.Date
 
@@ -300,4 +300,50 @@ private[scalacheck] sealed trait ArbitraryLowPriority{
   implicit def arbContainer2[C[_,_],T,U](implicit
     a: Arbitrary[(T,U)], b: Buildable[(T,U),C[T,U]], t: C[T,U] => Traversable[(T,U)]
   ): Arbitrary[C[T,U]] = Arbitrary(buildableOf[C[T,U],(T,U)](arbitrary[(T,U)]))
+
+  // Functions //
+
+  /** Arbitrary instance of Function1 */
+  implicit def arbFunction[T, R](implicit c: CoArbitrary[T], a: Arbitrary[R]): Arbitrary[T => R] =
+    Arbitrary(a.arbitrary.flatMap(r => (promote((x: T) => c.coarbitrary(x)(a.arbitrary), r))))
+
+  /** Arbitrary instance of Function2 */
+  implicit def arbFunction2[T1, T2, R](implicit
+    c1: CoArbitrary[T1], c2: CoArbitrary[T2], a: Arbitrary[R]
+  ): Arbitrary[(T1, T2) => R] = {
+    val af2 = arbFunction(c2, a)
+    Arbitrary(arbFunction(c1, af2).arbitrary.map(Function.uncurried[T1, T2, R]))
+  }
+
+  /** Arbitrary instance of Function3 */
+  implicit def arbFunction3[T1,T2,T3,R](implicit
+    c1: CoArbitrary[T1], c2: CoArbitrary[T2], c3: CoArbitrary[T3], a: Arbitrary[R]
+  ): Arbitrary[(T1, T2, T3) => R] = {
+    val af3 = arbFunction(c3, a)
+    val af2 = arbFunction(c2, af3)
+    Arbitrary(arbFunction(c1, af2).arbitrary.map(Function.uncurried[T1, T2, T3, R]))
+  }
+
+  /** Arbitrary instance of Function4 */
+  implicit def arbFunction4[T1,T2,T3,T4,R](implicit
+    c1: CoArbitrary[T1], c2: CoArbitrary[T2], c3: CoArbitrary[T3], c4: CoArbitrary[T4],
+    a: Arbitrary[R]
+  ): Arbitrary[(T1, T2, T3, T4) => R] = {
+    val af4 = arbFunction(c4, a)
+    val af3 = arbFunction(c3, af4)
+    val af2 = arbFunction(c2, af3)
+    Arbitrary(arbFunction(c1, af2).arbitrary.map(Function.uncurried[T1, T2, T3, T4, R]))
+  }
+
+  /** Arbitrary instance of Function5 */
+  implicit def arbFunction5[T1,T2,T3,T4,T5,R](implicit
+    c1: CoArbitrary[T1], c2: CoArbitrary[T2], c3: CoArbitrary[T3], c4: CoArbitrary[T4],
+    c5: CoArbitrary[T5], a: Arbitrary[R]
+  ): Arbitrary[(T1, T2, T3, T4, T5) => R] = {
+    val af5 = arbFunction(c5, a)
+    val af4 = arbFunction(c4, af5)
+    val af3 = arbFunction(c3, af4)
+    val af2 = arbFunction(c2, af3)
+    Arbitrary(arbFunction(c1, af2).arbitrary.map(Function.uncurried[T1, T2, T3, T4, T5, R]))
+  }
 }
