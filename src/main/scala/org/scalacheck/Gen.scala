@@ -790,4 +790,7 @@ object Gen {
   def variant[T](n: Int): Gen[T] => Gen[T] = g => gen { p =>
     r(g(p.withRng(Random.variantRandom(n, p.rng))))
   }
+
+  def promote[T, U](f: T => Gen[U], default: U): Gen[T => U] =
+    gen(p => r(Some(f(_)(p).getOrElse(default))))
 }

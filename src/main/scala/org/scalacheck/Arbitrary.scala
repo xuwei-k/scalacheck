@@ -57,7 +57,7 @@ sealed abstract class Arbitrary[T] {
  */
 object Arbitrary {
 
-  import Gen.{const, choose, sized, frequency, oneOf, buildableOf, resize}
+  import Gen.{const, choose, sized, frequency, oneOf, buildableOf, resize, promote}
   import collection.{immutable, mutable}
   import java.util.Date
 
@@ -302,34 +302,48 @@ object Arbitrary {
   // Functions //
 
   /** Arbitrary instance of Function1 */
-  implicit def arbFunction1[T1,R](implicit a: Arbitrary[R]
-  ): Arbitrary[T1 => R] = Arbitrary(
-    for(r <- arbitrary[R]) yield (t1: T1) => r
-  )
+  implicit def arbFunction[T, R](implicit c: CoArbitrary[T], a: Arbitrary[R]): Arbitrary[T => R] =
+    Arbitrary(a.arbitrary.flatMap(r => (promote((x: T) => c.coarbitrary(x)(a.arbitrary), r))))
 
   /** Arbitrary instance of Function2 */
-  implicit def arbFunction2[T1,T2,R](implicit a: Arbitrary[R]
-  ): Arbitrary[(T1,T2) => R] = Arbitrary(
-    for(r <- arbitrary[R]) yield (t1: T1, t2: T2) => r
-  )
+  implicit def arbFunction2[T1, T2, R](implicit
+    c1: CoArbitrary[T1], c2: CoArbitrary[T2], a: Arbitrary[R]
+  ): Arbitrary[(T1, T2) => R] = {
+    val af2 = arbFunction(c2, a)
+    Arbitrary(arbFunction(c1, af2).arbitrary.map(Function.uncurried[T1, T2, R]))
+  }
 
   /** Arbitrary instance of Function3 */
-  implicit def arbFunction3[T1,T2,T3,R](implicit a: Arbitrary[R]
-  ): Arbitrary[(T1,T2,T3) => R] = Arbitrary(
-    for(r <- arbitrary[R]) yield (t1: T1, t2: T2, t3: T3) => r
-  )
+  implicit def arbFunction3[T1,T2,T3,R](implicit
+    c1: CoArbitrary[T1], c2: CoArbitrary[T2], c3: CoArbitrary[T3], a: Arbitrary[R]
+  ): Arbitrary[(T1, T2, T3) => R] = {
+    val af3 = arbFunction(c3, a)
+    val af2 = arbFunction(c2, af3)
+    Arbitrary(arbFunction(c1, af2).arbitrary.map(Function.uncurried[T1, T2, T3, R]))
+  }
 
   /** Arbitrary instance of Function4 */
-  implicit def arbFunction4[T1,T2,T3,T4,R](implicit a: Arbitrary[R]
-  ): Arbitrary[(T1,T2,T3,T4) => R] = Arbitrary(
-    for(r <- arbitrary[R]) yield (t1: T1, t2: T2, t3: T3, t4: T4) => r
-  )
+  implicit def arbFunction4[T1,T2,T3,T4,R](implicit
+    c1: CoArbitrary[T1], c2: CoArbitrary[T2], c3: CoArbitrary[T3], c4: CoArbitrary[T4],
+    a: Arbitrary[R]
+  ): Arbitrary[(T1, T2, T3, T4) => R] = {
+    val af4 = arbFunction(c4, a)
+    val af3 = arbFunction(c3, af4)
+    val af2 = arbFunction(c2, af3)
+    Arbitrary(arbFunction(c1, af2).arbitrary.map(Function.uncurried[T1, T2, T3, T4, R]))
+  }
 
   /** Arbitrary instance of Function5 */
-  implicit def arbFunction5[T1,T2,T3,T4,T5,R](implicit a: Arbitrary[R]
-  ): Arbitrary[(T1,T2,T3,T4,T5) => R] = Arbitrary(
-    for(r <- arbitrary[R]) yield (t1: T1, t2: T2, t3: T3, t4: T4, t5: T5) => r
-  )
+  implicit def arbFunction5[T1,T2,T3,T4,T5,R](implicit
+    c1: CoArbitrary[T1], c2: CoArbitrary[T2], c3: CoArbitrary[T3], c4: CoArbitrary[T4],
+    c5: CoArbitrary[T5], a: Arbitrary[R]
+  ): Arbitrary[(T1, T2, T3, T4, T5) => R] = {
+    val af5 = arbFunction(c5, a)
+    val af4 = arbFunction(c4, af5)
+    val af3 = arbFunction(c3, af4)
+    val af2 = arbFunction(c2, af3)
+    Arbitrary(arbFunction(c1, af2).arbitrary.map(Function.uncurried[T1, T2, T3, T4, T5, R]))
+  }
 
 
   // Tuples //
