@@ -11,11 +11,11 @@ package org.scalacheck
 
 import Prop.{
   forAll, falsified, undecided, exception, passed, proved, all,
-  atLeastOne, sizedProp, someFailing, noneFailing, Undecided, False, True,
+  atLeastOne, sizedProp, Undecided, False, True,
   Exception, Proof, within, throws, BooleanOperators
 }
 import Gen.{
-  const, fail, frequency, oneOf, choose, listOf, listOfN,
+  const, frequency, oneOf, choose, listOf, listOfN,
   Parameters
 }
 import java.util.concurrent.atomic.AtomicBoolean
@@ -156,21 +156,5 @@ object PropSpecification extends Properties("Prop") {
   property("sizedProp") = {
     val g = oneOf(passed,falsified,undecided,exception)
     forAll(g) { p => p == sizedProp(_ => p) }
-  }
-
-  property("someFailing") = {
-    val g: Gen[Gen[Int]] = oneOf(List(const(1), fail))
-    val gs: Gen[List[Gen[Int]]] = listOf(g)
-    forAll(gs) { (gs: List[Gen[Int]]) =>
-      someFailing(gs) || gs.forall(_.sample.isDefined)
-    }
-  }
-
-  property("noneFailing") = {
-    val g: Gen[Gen[Int]] = oneOf(List(const(1), fail))
-    val gs: Gen[List[Gen[Int]]] = listOf(g)
-    forAll(gs) { (gs: List[Gen[Int]]) =>
-      noneFailing(gs) || gs.exists(!_.sample.isDefined)
-    }
   }
 }

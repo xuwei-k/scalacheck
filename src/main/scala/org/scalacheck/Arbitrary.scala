@@ -266,10 +266,7 @@ object Arbitrary {
 
   /** Arbitrary instance of [[org.scalacheck.Gen]] */
   implicit def arbGen[T](implicit a: Arbitrary[T]): Arbitrary[Gen[T]] =
-    Arbitrary(frequency(
-      (5, arbitrary[T] map (const(_))),
-      (1, Gen.fail)
-    ))
+    Arbitrary(arbitrary[T] map (const(_)))
 
   /** Arbitrary instance of the Option type */
   implicit def arbOption[T](implicit a: Arbitrary[T]): Arbitrary[Option[T]] =
@@ -303,7 +300,7 @@ object Arbitrary {
 
   /** Arbitrary instance of Function1 */
   implicit def arbFunction[T, R](implicit c: CoArbitrary[T], a: Arbitrary[R]): Arbitrary[T => R] =
-    Arbitrary(a.arbitrary.flatMap(r => (promote((x: T) => c.coarbitrary(x)(a.arbitrary), r))))
+    Arbitrary(promote((x: T) => c.coarbitrary(x)(a.arbitrary)))
 
   /** Arbitrary instance of Function2 */
   implicit def arbFunction2[T1, T2, R](implicit

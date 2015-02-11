@@ -19,60 +19,60 @@ sealed trait Gen[+T] {
 
   //// Private interface ////
 
-  import Gen.{R, r, gen}
+  import Gen._
 
   /** Just an alias */
   private type P = Gen.Parameters
 
-  /** Should be a copy of R.sieve. Used internally in Gen when some generators
-   *  with suchThat-claues are created (when R is not available). This method
-   *  actually breaks covariance, but since this method will only ever be
-   *  called with a value of exactly type T, it is OK. */
-  protected def sieveCopy(x: Any): Boolean = true
-
-  private[scalacheck] def doApply(p: P): R[T]
-
-
   //// Public interface ////
 
-  /** A class supporting filtered operations. */
-  final class WithFilter(p: T => Boolean) {
-    def map[U](f: T => U): Gen[U] = Gen.this.suchThat(p).map(f)
-    def flatMap[U](f: T => Gen[U]): Gen[U] = Gen.this.suchThat(p).flatMap(f)
-    def withFilter(q: T => Boolean): WithFilter = Gen.this.withFilter(x => p(x) && q(x))
-  }
-
   /** Evaluate this generator with the given parameters */
-  def apply(p: Gen.Parameters): Option[T] = doApply(p).retrieve
+  def apply(p: Gen.Parameters): T
 
   /** Create a new generator by mapping the result of this generator */
-  def map[U](f: T => U): Gen[U] = gen { p => doApply(p).map(f) }
+  def map[U](f: T => U): Gen[U] = gen { p => f(this(p)) }
 
   /** Create a new generator by flat-mapping the result of this generator */
   def flatMap[U](f: T => Gen[U]): Gen[U] = gen { p =>
-    doApply(p).flatMap(t => f(t).doApply(p))
+    f(this(p))(p)
   }
 
-  /** Create a new generator that uses this generator to produce a value
-   *  that fulfills the given condition. If the condition is not fulfilled,
-   *  the generator fails (returns None). */
-  def filter(p: T => Boolean): Gen[T] = suchThat(p)
+  def withFilter(p: T => Boolean): Gen[T] = suchThat(p)
 
-  /** Creates a non-strict filtered version of this generator. */
-  def withFilter(p: T => Boolean): WithFilter = new WithFilter(p)
+  def filter(p: T => Boolean): Gen[T] = suchThat(p)
 
   /** Create a new generator that uses this generator to produce a value
    *  that fulfills the given condition. If the condition is not fulfilled,
    *  the generator fails (returns None). This method is identical to
    *  [Gen.filter]. */
-  def suchThat(f: T => Boolean): Gen[T] = new Gen[T] {
-    def doApply(p: P) = {
-      val res = Gen.this.doApply(p)
-      res.copy(s = { x:T => res.sieve(x) && f(x) })
+  def suchThat(f: T => Boolean): Gen[T] = gen { p =>
+    var g = suchThatOption(f)
+    var r = g(p)
+    while(r.isEmpty) {
+      g = sized(n => resize(n + 1, suchThatOption(f)))
+      r = g(p)
     }
-    override def sieveCopy(x: Any) =
-      try Gen.this.sieveCopy(x) && f(x.asInstanceOf[T])
-      catch { case _: java.lang.ClassCastException => false }
+    r.get
+  }
+
+  private def suchThatOption(f: T => Boolean): Gen[Option[T]] = {
+    def go(k: Int, n: Int): Gen[Option[T]] =
+      if(n == 0) None
+      else gen { p =>
+        var nn = n
+        var kk = k
+        def rp(i: Int, j: Int, g: Gen[T]): Gen[T] = resize(2 * i + j, g)
+        var g = rp(k, n, this)
+        var x = g(p)
+        while(nn != 0 && !f(x)) {
+          nn = nn - 1
+          kk = kk + 1
+          g = rp(kk, nn, g)
+          x = g(p)
+        }
+        if(nn == 0) None else Some(x)
+      }
+    sized(n => go(0, math.max(1, n)))
   }
 
   /** Create a generator that calls this generator repeatedly until
@@ -80,52 +80,25 @@ sealed trait Gen[+T] {
    *  returned. Use this combinator with care, since it may result
    *  in infinite loops. */
   def retryUntil(p: T => Boolean): Gen[T] = flatMap { t =>
-    if (p(t)) Gen.const(t).suchThat(p) else retryUntil(p)
+    if (p(t)) const(t) else retryUntil(p)
   }
 
-  def sample: Option[T] = doApply(Gen.Parameters.default).retrieve
+  def sample: Option[T] = Some(this(Gen.Parameters.default))
 
   /** Returns a new property that holds if and only if both this
    *  and the given generator generates the same result, or both
    *  generators generate no result.  */
   def ==[U](g: Gen[U]) = Prop { prms =>
-    (doApply(prms).retrieve, g.doApply(prms).retrieve) match {
-      case (None,None) => Prop.proved(prms)
-      case (Some(r1),Some(r2)) if r1 == r2 => Prop.proved(prms)
-      case _ => Prop.falsified(prms)
-    }
+    if(this(prms) == g(prms)) Prop.proved(prms)
+    else Prop.falsified(prms)
   }
 
   def !=[U](g: Gen[U]) = Prop.forAll(this)(r => Prop.forAll(g)(_ != r))
 
   def !==[U](g: Gen[U]) = Prop { prms =>
-    (doApply(prms).retrieve, g.doApply(prms).retrieve) match {
-      case (None,None) => Prop.falsified(prms)
-      case (Some(r1),Some(r2)) if r1 == r2 => Prop.falsified(prms)
-      case _ => Prop.proved(prms)
-    }
+    if(this(prms) == g(prms)) Prop.falsified(prms)
+    else Prop.proved(prms)
   }
-
-  /** Put a label on the generator to make test reports clearer */
-  def label(l: String): Gen[T] = new Gen[T] {
-    def doApply(p: P) = {
-      val r = Gen.this.doApply(p)
-      r.copy(l = r.labels + l)
-    }
-    override def sieveCopy(x: Any) = Gen.this.sieveCopy(x)
-  }
-
-  /** Put a label on the generator to make test reports clearer */
-  def :|(l: String) = label(l)
-
-  /** Put a label on the generator to make test reports clearer */
-  def |:(l: String) = label(l)
-
-  /** Put a label on the generator to make test reports clearer */
-  def :|(l: Symbol) = label(l.name)
-
-  /** Put a label on the generator to make test reports clearer */
-  def |:(l: Symbol) = label(l.name)
 
 }
 
@@ -138,43 +111,9 @@ object Gen {
   /** Just an alias */
   private type P = Parameters
 
-  private[scalacheck] trait R[+T] {
-    def labels: Set[String] = Set()
-    def sieve[U >: T]: U => Boolean = _ => true
-    protected def result: Option[T]
-
-    def retrieve = result.filter(sieve)
-
-    def copy[U >: T](
-      l: Set[String] = this.labels,
-      s: U => Boolean = this.sieve,
-      r: Option[U] = this.result
-    ): R[U] = new R[U] {
-      override val labels = l
-      override def sieve[V >: U] = { x:Any =>
-        try s(x.asInstanceOf[U])
-        catch { case _: java.lang.ClassCastException => false }
-      }
-      val result = r
-    }
-
-    def map[U](f: T => U): R[U] = r(retrieve.map(f)).copy(l = labels)
-
-    def flatMap[U](f: T => R[U]): R[U] = retrieve match {
-      case None => r(None).copy(l = labels)
-      case Some(t) =>
-        val r = f(t)
-        r.copy(l = labels ++ r.labels)
-    }
-  }
-
-  private[scalacheck] def r[T](r: Option[T]): R[T] = new R[T] {
-    val result = r
-  }
-
   /** Generator factory method */
-  private[scalacheck] def gen[T](f: P => R[T]): Gen[T] = new Gen[T] {
-    def doApply(p: P) = f(p)
+  private[scalacheck] def gen[T](f: P => T): Gen[T] = new Gen[T] {
+    def apply(p: P) = f(p)
   }
 
   //// Public interface ////
@@ -228,55 +167,56 @@ object Gen {
   /** Provides implicit [[org.scalacheck.Gen.Choose]] instances */
   object Choose {
 
-    private def chLng(l: Long, h: Long)(p: P): R[Long] = {
-      if (h < l) r(None) else {
-        val d = h - l + 1
-        if (d <= 0) {
-          var n = p.rng.nextLong
-          while (n < l || n > h) {
-            n = p.rng.nextLong
-          }
-          r(Some(n))
-        } else {
-          r(Some(l + math.abs(p.rng.nextLong % d)))
+    private def chLng(l: Long, h: Long)(p: P): Long = {
+      val f = math.min(l, h)
+      val t = math.max(l, h)
+      val d = t - l + 1
+      if (d <= 0) {
+        var n = p.rng.nextLong
+        while (n < f || n > t) {
+          n = p.rng.nextLong
         }
+        n
+      } else {
+        f + math.abs(p.rng.nextLong % d)
       }
     }
 
-    private def chDbl(l: Double, h: Double)(p: P): R[Double] = {
-      val d = h-l
-      if (d < 0 || d > Double.MaxValue) r(None)
-      else if (d == 0) r(Some(l))
-      else r(Some(p.rng.nextDouble * (h-l) + l))
+    private def chDbl(l: Double, h: Double)(p: P): Double = {
+      val f = math.min(l, h)
+      val t = math.max(l, h)
+      val d = t - f
+      if (d == 0) f
+      else p.rng.nextDouble * (t - f) + f
     }
 
     implicit val chooseLong: Choose[Long] = new Choose[Long] {
       def choose(low: Long, high: Long) =
-        gen(chLng(low,high)).suchThat(x => x >= low && x <= high)
+        gen(chLng(low,high))
     }
     implicit val chooseInt: Choose[Int] = new Choose[Int] {
       def choose(low: Int, high: Int) =
-        gen(chLng(low,high)).map(_.toInt).suchThat(x => x >= low && x <= high)
+        gen(chLng(low,high)).map(_.toInt)
     }
     implicit val chooseByte: Choose[Byte] = new Choose[Byte] {
       def choose(low: Byte, high: Byte) =
-        gen(chLng(low,high)).map(_.toByte).suchThat(x => x >= low && x <= high)
+        gen(chLng(low,high)).map(_.toByte)
     }
     implicit val chooseShort: Choose[Short] = new Choose[Short] {
       def choose(low: Short, high: Short) =
-        gen(chLng(low,high)).map(_.toShort).suchThat(x => x >= low && x <= high)
+        gen(chLng(low,high)).map(_.toShort)
     }
     implicit val chooseChar: Choose[Char] = new Choose[Char] {
       def choose(low: Char, high: Char) =
-        gen(chLng(low,high)).map(_.toChar).suchThat(x => x >= low && x <= high)
+        gen(chLng(low,high)).map(_.toChar)
     }
     implicit val chooseDouble: Choose[Double] = new Choose[Double] {
       def choose(low: Double, high: Double) =
-        gen(chDbl(low,high)).suchThat(x => x >= low && x <= high)
+        gen(chDbl(low,high))
     }
     implicit val chooseFloat: Choose[Float] = new Choose[Float] {
       def choose(low: Float, high: Float) =
-        gen(chDbl(low,high)).map(_.toFloat).suchThat(x => x >= low && x <= high)
+        gen(chDbl(low,high)).map(_.toFloat)
     }
 
     /** Transform a Choose[T] to a Choose[U] where T and U are two isomorphic
@@ -293,10 +233,7 @@ object Gen {
   //// Various Generator Combinators ////
 
   /** A generator that always generates the given value */
-  implicit def const[T](x: T): Gen[T] = gen(_ => r(Some(x))).suchThat(_ == x)
-
-  /** A generator that never generates a value */
-  def fail[T]: Gen[T] = gen(_ => r(None)).suchThat(_ => false)
+  implicit def const[T](x: T): Gen[T] = gen(_ => x)
 
   /** A generator that generates a random value in the given (inclusive)
    *  range. If the range is invalid, the generator will not generate
@@ -308,8 +245,8 @@ object Gen {
    *  resulting generator will also fail. */
   def sequence[C,T](gs: Traversable[Gen[T]])(implicit b: Buildable[T,C]): Gen[C] = {
     val g = gen { p =>
-      gs.foldLeft(r(Some(collection.immutable.Vector.empty[T]))) {
-        case (rs,g) => g.doApply(p).flatMap(r => rs.map(_ :+ r))
+      gs.foldLeft(collection.immutable.Vector.empty[T]) {
+        case (rs,g) => rs :+ g(p)
       }
     }
     g.map(b.fromIterable)
@@ -319,24 +256,24 @@ object Gen {
    *  and not until the wrapper generator is evaluated. */
   def lzy[T](g: => Gen[T]): Gen[T] = {
     lazy val h = g
-    gen { p => h.doApply(p) }
+    gen { p => h(p) }
   }
 
   /** Wraps a generator for later evaluation. The given parameter is
    *  evaluated each time the wrapper generator is evaluated. */
-  def wrap[T](g: => Gen[T]) = gen { p => g.doApply(p) }
+  def wrap[T](g: => Gen[T]) = gen { p => g(p) }
 
   /** Creates a generator that can access its generation parameters */
-  def parameterized[T](f: Parameters => Gen[T]) = gen { p => f(p).doApply(p) }
+  def parameterized[T](f: Parameters => Gen[T]) = gen { p => f(p)(p) }
 
   /** Creates a generator that can access its generation size */
-  def sized[T](f: Int => Gen[T]) = gen { p => f(p.size).doApply(p) }
+  def sized[T](f: Int => Gen[T]) = gen { p => f(p.size)(p) }
 
   /** A generator that returns the current generation size */
   lazy val size: Gen[Int] = sized { sz => sz }
 
   /** Creates a resized version of a generator */
-  def resize[T](s: Int, g: Gen[T]) = gen(p => g.doApply(p.withSize(s)))
+  def resize[T](s: Int, g: Gen[T]) = gen(p => g(p.withSize(s)))
 
   /** Picks a random value from a list */
   def oneOf[T](xs: Seq[T]): Gen[T] =
@@ -348,7 +285,7 @@ object Gen {
   /** Picks a random generator from a list */
   def oneOf[T](g0: Gen[T], g1: Gen[T], gn: Gen[T]*): Gen[T] = {
     val gs = g0 +: g1 +: gn
-    choose(0,gs.size-1).flatMap(gs(_)).suchThat(x => gs.exists(_.sieveCopy(x)))
+    choose(0,gs.size-1).flatMap(gs(_))
   }
 
   /** Makes a generator result optional. Either `Some(T)` or `None` will be provided. */
@@ -358,7 +295,7 @@ object Gen {
   /** Chooses one of the given generators with a weighted random distribution */
   def frequency[T](gs: (Int,Gen[T])*): Gen[T] = {
     gs.filter(_._1 > 0) match {
-      case Nil => fail
+      case Nil => throw new IllegalArgumentException("Gen.frequency require non-empty list.")
       case filtered =>
         var tot = 0l
         val tree: TreeMap[Long, Gen[T]] = {
@@ -370,9 +307,7 @@ object Gen {
           }
           builder.result()
         }
-        choose(1L, tot).flatMap(r => tree.from(r).head._2).suchThat { x =>
-          gs.exists(_._2.sieveCopy(x))
-        }
+        choose(1L, tot).flatMap(r => tree.from(r).head._2)
     }
   }
 
@@ -397,10 +332,7 @@ object Gen {
   def buildableOfN[C,T](n: Int, g: Gen[T])(implicit
     evb: Buildable[T,C], evt: C => Traversable[T]
   ): Gen[C] =
-    sequence[C,T](Traversable.fill(n)(g)) suchThat { c =>
-      // TODO: Can we guarantee c.size == n (See issue #89)?
-      c.forall(g.sieveCopy)
-    }
+    sequence[C,T](Traversable.fill(n)(g))
 
   /** Generates a container of any Traversable type for which there exists an
    *  implicit [[org.scalacheck.util.Buildable]] instance. The elements in the
@@ -409,9 +341,7 @@ object Gen {
   def buildableOf[C,T](g: Gen[T])(implicit
     evb: Buildable[T,C], evt: C => Traversable[T]
   ): Gen[C] =
-    sized(s => choose(0,s).flatMap(buildableOfN[C,T](_,g))) suchThat { c =>
-      c.forall(g.sieveCopy)
-    }
+    sized(s => choose(0,s).flatMap(buildableOfN[C,T](_,g)))
 
   /** Generates a non-empty container of any Traversable type for which there
    *  exists an implicit [[org.scalacheck.util.Buildable]] instance. The
@@ -422,7 +352,7 @@ object Gen {
     evb: Buildable[T,C], evt: C => Traversable[T]
   ): Gen[C] =
     sized(s => choose(1,s).flatMap(buildableOfN[C,T](_,g))) suchThat { c =>
-      c.size > 0 && c.forall(g.sieveCopy)
+      c.size > 0
     }
 
   /** A convenience method for calling `buildableOfN[C[T],T](n,g)`. */
@@ -477,12 +407,12 @@ object Gen {
 
   /** A generator that picks a given number of elements from a list, randomly */
   def pick[T](n: Int, l: Iterable[T]): Gen[Seq[T]] =
-    if(n > l.size || n < 0) fail
+    if(n > l.size || n < 0) throw new IllegalArgumentException("Gen.pick require non-empty list and positive number.")
     else (gen { p =>
       val b = new collection.mutable.ListBuffer[T]
       b ++= l
-      while(b.length > n) b.remove(choose(0, b.length-1).doApply(p).retrieve.get)
-      r(Some(b))
+      while(b.length > n) b.remove(choose(0, b.length-1).apply(p))
+      b
     }).suchThat(_.forall(x => l.exists(x == _)))
 
   /** A generator that picks a given number of elements from a list, randomly */
@@ -490,7 +420,7 @@ object Gen {
     val gs = g1 +: g2 +: gn
     pick(n, 0 until gs.size).flatMap(idxs =>
       sequence[List[T],T](idxs.toList.map(gs(_)))
-    ).suchThat(_.forall(x => gs.exists(_.sieveCopy(x))))
+    )
   }
 
 
@@ -575,32 +505,27 @@ object Gen {
 
   /** Combines the given generators into one generator that produces a
    *  tuple of their generated values. */
-  def zip[T1,T2](g1: Gen[T1], g2: Gen[T2]): Gen[(T1,T2)] = {
-    val g = for {
-      t1 <- g1; t2 <- g2
-    } yield (t1,t2)
-    g.suchThat { case (t1,t2) => g1.sieveCopy(t1) && g2.sieveCopy(t2) }
-  }
+  def zip[T1,T2](g1: Gen[T1], g2: Gen[T2]): Gen[(T1,T2)] = for {
+    t1 <- g1; t2 <- g2
+  } yield (t1,t2)
 
   /** Combines the given generators into one generator that produces a
    *  tuple of their generated values. */
   def zip[T1,T2,T3](g1: Gen[T1], g2: Gen[T2], g3: Gen[T3]): Gen[(T1,T2,T3)] = {
-    val g0 = zip(g1,g2)
-    val g = for {
+    val g0 = zip(g1, g2)
+    for {
       (t1,t2) <- g0; t3 <- g3
     } yield (t1,t2,t3)
-    g.suchThat { case (t1,t2,t3) => g0.sieveCopy(t1,t2) && g3.sieveCopy(t3) }
   }
 
   /** Combines the given generators into one generator that produces a
    *  tuple of their generated values. */
   def zip[T1,T2,T3,T4](g1: Gen[T1], g2: Gen[T2], g3: Gen[T3], g4: Gen[T4]
   ): Gen[(T1,T2,T3,T4)] = {
-    val g0 = zip(g1,g2,g3)
-    val g = for {
+    val g0 = zip(g1, g2, g3)
+    for {
       (t1,t2,t3) <- g0; t4 <- g4
     } yield (t1,t2,t3,t4)
-    g.suchThat { case (t1,t2,t3,t4) => g0.sieveCopy(t1,t2,t3) && g4.sieveCopy(t4) }
   }
 
   /** Combines the given generators into one generator that produces a
@@ -609,12 +534,9 @@ object Gen {
     g5: Gen[T5]
   ): Gen[(T1,T2,T3,T4,T5)] = {
     val g0 = zip(g1,g2,g3,g4)
-    val g = for {
+    for {
       (t1,t2,t3,t4) <- g0; t5 <- g5
     } yield (t1,t2,t3,t4,t5)
-    g.suchThat { case (t1,t2,t3,t4,t5) =>
-      g0.sieveCopy(t1,t2,t3,t4) && g5.sieveCopy(t5)
-    }
   }
 
   /** Combines the given generators into one generator that produces a
@@ -623,12 +545,9 @@ object Gen {
     g5: Gen[T5], g6: Gen[T6]
   ): Gen[(T1,T2,T3,T4,T5,T6)] = {
     val g0 = zip(g1,g2,g3,g4,g5)
-    val g = for {
+    for {
       (t1,t2,t3,t4,t5) <- g0; t6 <- g6
     } yield (t1,t2,t3,t4,t5,t6)
-    g.suchThat { case (t1,t2,t3,t4,t5,t6) =>
-      g0.sieveCopy(t1,t2,t3,t4,t5) && g6.sieveCopy(t6)
-    }
   }
 
   /** Combines the given generators into one generator that produces a
@@ -637,12 +556,9 @@ object Gen {
     g4: Gen[T4], g5: Gen[T5], g6: Gen[T6], g7: Gen[T7]
   ): Gen[(T1,T2,T3,T4,T5,T6,T7)] = {
     val g0 = zip(g1,g2,g3,g4,g5,g6)
-    val g = for {
+    for {
       (t1,t2,t3,t4,t5,t6) <- g0; t7 <- g7
     } yield (t1,t2,t3,t4,t5,t6,t7)
-    g.suchThat { case (t1,t2,t3,t4,t5,t6,t7) =>
-      g0.sieveCopy(t1,t2,t3,t4,t5,t6) && g7.sieveCopy(t7)
-    }
   }
 
   /** Combines the given generators into one generator that produces a
@@ -651,12 +567,9 @@ object Gen {
     g4: Gen[T4], g5: Gen[T5], g6: Gen[T6], g7: Gen[T7], g8: Gen[T8]
   ): Gen[(T1,T2,T3,T4,T5,T6,T7,T8)] = {
     val g0 = zip(g1,g2,g3,g4,g5,g6,g7)
-    val g = for {
+    for {
       (t1,t2,t3,t4,t5,t6,t7) <- g0; t8 <- g8
     } yield (t1,t2,t3,t4,t5,t6,t7,t8)
-    g.suchThat { case (t1,t2,t3,t4,t5,t6,t7,t8) =>
-      g0.sieveCopy(t1,t2,t3,t4,t5,t6,t7) && g8.sieveCopy(t8)
-    }
   }
 
   /** Combines the given generators into one generator that produces a
@@ -665,12 +578,9 @@ object Gen {
     g4: Gen[T4], g5: Gen[T5], g6: Gen[T6], g7: Gen[T7], g8: Gen[T8], g9: Gen[T9]
   ): Gen[(T1,T2,T3,T4,T5,T6,T7,T8,T9)] = {
     val g0 = zip(g1,g2,g3,g4,g5,g6,g7,g8)
-    val g = for {
+    for {
       (t1,t2,t3,t4,t5,t6,t7,t8) <- g0; t9 <- g9
     } yield (t1,t2,t3,t4,t5,t6,t7,t8,t9)
-    g.suchThat { case (t1,t2,t3,t4,t5,t6,t7,t8,t9) =>
-      g0.sieveCopy(t1,t2,t3,t4,t5,t6,t7,t8) && g9.sieveCopy(t9)
-    }
   }
 
   /** Takes a function and returns a generator that generates arbitrary
@@ -788,9 +698,9 @@ object Gen {
   }
 
   def variant[T](n: Int): Gen[T] => Gen[T] = g => gen { p =>
-    r(g(p.withRng(Random.variantRandom(n, p.rng))))
+    g(p.withRng(Random.variantRandom(n, p.rng)))
   }
 
-  def promote[T, U](f: T => Gen[U], default: U): Gen[T => U] =
-    gen(p => r(Some(f(_)(p).getOrElse(default))))
+  def promote[T, U](f: T => Gen[U]): Gen[T => U] =
+    gen(p => x => f(x)(p))
 }

@@ -152,7 +152,7 @@ trait Prop extends Testable {
 
 object Prop {
 
-  import Gen.{fail, frequency, oneOf, Parameters}
+  import Gen.{frequency, oneOf, Parameters}
   import Arbitrary.{arbitrary}
   import Shrink.{shrink}
 
@@ -419,14 +419,6 @@ object Prop {
     ps.map(p => p(prms)).reduceLeft(_ || _)
   )
 
-  /** A property that holds if at least one of the given generators
-   *  fails generating a value */
-  def someFailing[T](gs: Seq[Gen[T]]) = atLeastOne(gs.map(_ == fail):_*)
-
-  /** A property that holds iff none of the given generators
-   *  fails generating a value */
-  def noneFailing[T](gs: Seq[Gen[T]]) = all(gs.map(_ !== fail):_*)
-
   /** Returns true if the given statement throws an exception
    *  of the specified type */
   def throws[T <: Throwable](c: Class[T])(x: => Any): Boolean =
@@ -467,18 +459,13 @@ object Prop {
     pv: P => Prop,
     pp: A => Pretty
   ): Prop = Prop { prms =>
-    val gr = g.doApply(prms)
-    gr.retrieve match {
-      case None => undecided(prms)
-      case Some(x) =>
-        val p = secure(f(x))
-        val labels = gr.labels.mkString(",")
-        val r = p(prms).addArg(Arg(labels,x,0,x,pp(x),pp(x)))
-        r.status match {
-          case True => r.copy(status = Proof)
-          case False => r.copy(status = Undecided)
-          case _ => r
-        }
+    val x = g(prms)
+    val p = secure(f(x))
+    val r = p(prms).addArg(Arg("",x,0,x,pp(x),pp(x)))
+    r.status match {
+      case True => r.copy(status = Proof)
+      case False => r.copy(status = Undecided)
+      case _ => r
     }
   }
 
@@ -490,14 +477,9 @@ object Prop {
     pv: P => Prop,
     pp1: T1 => Pretty
   ): Prop = Prop { prms =>
-    val gr = g1.doApply(prms)
-    gr.retrieve match {
-      case None => undecided(prms)
-      case Some(x) =>
-        val p = secure(f(x))
-        val labels = gr.labels.mkString(",")
-        provedToTrue(p(prms)).addArg(Arg(labels,x,0,x,pp1(x),pp1(x)))
-    }
+    val x = g1(prms)
+    val p = secure(f(x))
+    provedToTrue(p(prms)).addArg(Arg("",x,0,x,pp1(x),pp1(x)))
   }
 
   /** Universal quantifier for two explicit generators.
@@ -688,8 +670,7 @@ object Prop {
   )(implicit pv: P => Prop, pp: T => Pretty
   ): Prop = Prop { prms =>
 
-    val gr = g.doApply(prms)
-    val labels = gr.labels.mkString(",")
+    val gr = g(prms)
 
     def result(x: T) = {
       val p = secure(pv(f(x)))
@@ -707,8 +688,8 @@ object Prop {
     }
 
     def shrinker(x: T, r: Result, shrinks: Int, orig: T): Result = {
-      val xs = shrink(x).filter(gr.sieve)
-      val res = r.addArg(Arg(labels,x,shrinks,orig,pp(x),pp(orig)))
+      val xs = shrink(x)
+      val res = r.addArg(Arg("",x,shrinks,orig,pp(x),pp(orig)))
       if(xs.isEmpty) res else getFirstFailure(xs) match {
         case Right((x2,r2)) => res
         case Left((x2,r2)) => shrinker(x2, replOrig(r,r2), shrinks+1, orig)
@@ -726,13 +707,9 @@ object Prop {
       case _ => r1
     }
 
-    gr.retrieve match {
-      case None => undecided(prms)
-      case Some(x) =>
-        val r = result(x)
-        if (!r.failure) r.addArg(Arg(labels,x,0,x,pp(x),pp(x)))
-        else shrinker(x,r,0,x)
-    }
+    val r = result(gr)
+    if (!r.failure) r.addArg(Arg("",gr,0,gr,pp(gr),pp(gr)))
+    else shrinker(gr,r,0,gr)
 
   }
 
