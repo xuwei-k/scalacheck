@@ -21,24 +21,6 @@ object CoArbitrary {
         Gen.variant(t << 1)
     }
 
-  implicit def coarbF1[A, B](implicit A: Arbitrary[A], B: CoArbitrary[B]): CoArbitrary[A => B] =
-    new CoArbitrary[A => B] {
-      def coarbitrary[U](t: A => B) = g =>
-        A.arbitrary.flatMap(a => B.coarbitrary(t(a))(g))
-    }
-
-  implicit def coarbF2[A1: Arbitrary, A2: Arbitrary, B: CoArbitrary]: CoArbitrary[(A1, A2) => B] =
-    CoArbitrary[Tuple2[A1, A2] => B].contramap(_.tupled)
-
-  implicit def coarbF3[A1: Arbitrary, A2: Arbitrary, A3: Arbitrary, B: CoArbitrary]: CoArbitrary[(A1, A2, A3) => B] =
-    CoArbitrary[Tuple3[A1, A2, A3] => B].contramap(_.tupled)
-
-  implicit def coarbF4[A1: Arbitrary, A2: Arbitrary, A3: Arbitrary, A4: Arbitrary, B: CoArbitrary]: CoArbitrary[(A1, A2, A3, A4) => B] =
-    CoArbitrary[Tuple4[A1, A2, A3, A4] => B].contramap(_.tupled)
-
-  implicit def coarbF5[A1: Arbitrary, A2: Arbitrary, A3: Arbitrary, A4: Arbitrary, A5: Arbitrary, B: CoArbitrary]: CoArbitrary[(A1, A2, A3, A4, A5) => B] =
-    CoArbitrary[Tuple5[A1, A2, A3, A4, A5] => B].contramap(_.tupled)
-
   implicit val coarbString: CoArbitrary[String] =
     CoArbitrary[List[Char]].contramap(_.toList)
 
