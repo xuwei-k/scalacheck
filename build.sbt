@@ -26,7 +26,7 @@ lazy val sharedSettings = mimaDefaultSettings ++ Seq(
 
   libraryDependencies ++= {
     if (scalaVersion.value startsWith "2.10") Seq.empty
-    else Seq("org.scala-lang.modules" %% "scala-parser-combinators" % "1.0.2")
+    else Seq("org.scala-lang.modules" %% "scala-parser-combinators" % "1.0.3")
   },
 
   javacOptions += "-Xmx1024M",
@@ -70,5 +70,8 @@ lazy val js = project.in(file("js"))
 lazy val jvm = project.in(file("jvm"))
   .settings(sharedSettings: _*)
   .settings(
-    libraryDependencies += "org.scala-sbt" %  "test-interface" % "1.0"
+    libraryDependencies ++= Seq(
+      "org.scala-sbt" %  "test-interface" % "1.0"
+     ,"com.nicta" %% "rng" % "1.3.0"
+    )
   )
