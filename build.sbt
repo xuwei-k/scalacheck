@@ -1,12 +1,10 @@
-sourceDirectory := file("dummy source directory")
-
 lazy val versionNumber = "1.12.5"
 
 lazy val isRelease = true
 
 lazy val travisCommit = Option(System.getenv().get("TRAVIS_COMMIT"))
 
-lazy val sharedSettings = MimaSettings.settings ++ Seq(
+lazy val sharedSettings = Seq(
 
   name := "scalacheck",
 
@@ -34,13 +32,13 @@ lazy val sharedSettings = MimaSettings.settings ++ Seq(
     username, password
   )).toSeq,
 
-  scalaVersion := "2.11.7",
+  scalaVersion := "2.12.0-M4",
 
   crossScalaVersions := Seq("2.10.5", "2.11.7", "2.12.0-M2"),
 
-  unmanagedSourceDirectories in Compile += (baseDirectory in LocalRootProject).value / "src" / "main" / "scala",
+  unmanagedSourceDirectories in Compile += (baseDirectory in LocalRootProject).value / "jvm/src/main/scala",
 
-  unmanagedSourceDirectories in Test += (baseDirectory in LocalRootProject).value / "src" / "test" / "scala",
+  unmanagedSourceDirectories in Test += (baseDirectory in LocalRootProject).value / "jvm/src/test/scala",
 
   resolvers += "sonatype" at "https://oss.sonatype.org/content/repositories/releases",
 
@@ -80,20 +78,6 @@ lazy val sharedSettings = MimaSettings.settings ++ Seq(
   }
 )
 
-import com.typesafe.tools.mima.plugin.MimaKeys.previousArtifact
+sharedSettings
 
-lazy val js = project.in(file("js"))
-  .settings(sharedSettings: _*)
-  .settings(
-    scalaJSStage in Global := FastOptStage,
-    previousArtifact := None,
-    libraryDependencies += "org.scala-js" %% "scalajs-test-interface" % scalaJSVersion
-  )
-  .enablePlugins(ScalaJSPlugin)
-
-lazy val jvm = project.in(file("jvm"))
-  .settings(sharedSettings: _*)
-  .settings(
-    previousArtifact := None,
-    libraryDependencies += "org.scala-sbt" %  "test-interface" % "1.0"
-  )
+libraryDependencies += "org.scala-sbt" %  "test-interface" % "1.0"
