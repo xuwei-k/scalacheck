@@ -18,7 +18,7 @@ import Arbitrary.arbitrary
 import java.math.BigInteger
 import rng.Seed
 
-sealed trait Cogen[T] extends Serializable {
+sealed abstract class Cogen[T] extends Serializable {
 
   def perturb(seed: Seed, t: T): Seed
 
@@ -29,7 +29,7 @@ sealed trait Cogen[T] extends Serializable {
     Cogen((seed: Seed, s: S) => perturb(seed, f(s)))
 }
 
-object Cogen extends CogenArities with CogenLowPriority {
+object Cogen extends CogenLowPriority {
 
   // See https://github.com/rickynils/scalacheck/issues/230 for dummy expl.
   def apply[T](implicit ev: Cogen[T], dummy: Cogen[T]): Cogen[T] = ev
@@ -156,7 +156,7 @@ object Cogen extends CogenArities with CogenLowPriority {
   }
 }
 
-trait CogenLowPriority {
+sealed abstract class CogenLowPriority extends CogenArities {
   implicit def cogenSeq[CC[x] <: Seq[x], A: Cogen]: Cogen[CC[A]] =
     Cogen.it(_.iterator)
 }

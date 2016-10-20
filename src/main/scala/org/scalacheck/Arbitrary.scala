@@ -58,10 +58,10 @@ sealed abstract class Arbitrary[T] extends Serializable {
  *  generators.
  *  </p>
  */
-object Arbitrary extends ArbitraryLowPriority with ArbitraryArities
+object Arbitrary extends ArbitraryLowPriority
 
 /** separate trait to have same priority as ArbitraryArities */
-private[scalacheck] sealed trait ArbitraryLowPriority {
+private[scalacheck] sealed abstract class ArbitraryLowPriority extends ArbitraryArities {
   import Gen.{const, choose, sized, frequency, oneOf, buildableOf, resize}
   import collection.{immutable, mutable}
 
