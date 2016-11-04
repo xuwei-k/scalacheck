@@ -1,17 +1,6 @@
 language: scala
 script: ./tools/travis-script.sh
 after_success: ./tools/travis-deploy.sh
-branches:
-  only:
-    - master
-    - scalacheck2
-    - 1.12.x
-    - 1.13.x
-notifications:
-  email:
-    - adriaan.moors@typesafe.com
-    - rickynils@gmail.com
-
 scala:
   - 2.10.6
   - 2.11.8
