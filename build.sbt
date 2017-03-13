@@ -101,6 +101,16 @@ lazy val sharedSettings = MimaSettings.settings ++ scalaVersionSettings ++ Seq(
 lazy val js = project.in(file("js"))
   .settings(sharedSettings: _*)
   .settings(
+    scalaJSOptimizerOptions ~= { options =>
+      // https://github.com/scala-js/scala-js/issues/2798
+      try {
+        scala.util.Properties.isJavaAtLeast("1.8")
+        options
+      } catch {
+        case _: NumberFormatException =>
+          options.withParallel(false)
+      }
+    },
     scalaJSStage in Global := FastOptStage,
     libraryDependencies += "org.scala-js" %% "scalajs-test-interface" % scalaJSVersion
   )

@@ -1,20 +1,7 @@
 language: scala
 script: ./tools/travis-script.sh
 after_success: ./tools/travis-deploy.sh
-branches:
-  only:
-    - master
-    - scalacheck2
-    - 1.12.x
-    - 1.13.x
-notifications:
-  email:
-    - adriaan.moors@typesafe.com
-    - rickynils@gmail.com
-
 scala:
-  - 2.10.6
-  - 2.11.8
   - 2.12.0
 jdk:
   - oraclejdk8
@@ -24,7 +11,26 @@ env:
     - secure: KeZRD91oE4UzwhSJfjllkwNXnerDGQJSIOuRLVtbLCq0JJnAfj6B7fvI2KyZqQwuhYrUyYOSbSLd6BAi75bBYMb3D1yNdyPA5gHDg5aj96ALojrOuU60+/dOQ0Rg6Pf2UiTlFAXzz1mud8+Q3svaeKX4JDVxj329T3ReBspjyBY=
   matrix:
     - PLATFORM=jvm SBT_PARALLEL=true  WORKERS=1 DEPLOY=true
-    - PLATFORM=jvm SBT_PARALLEL=true  WORKERS=4 DEPLOY=false
-    - PLATFORM=jvm SBT_PARALLEL=false WORKERS=4 DEPLOY=false
-    - PLATFORM=js  SBT_PARALLEL=true  WORKERS=1 DEPLOY=true
 sudo: false
+
+matrix:
+  include:
+  - dist: trusty
+    group: edge
+    sudo: required
+    scala: 2.12.1
+    jdk: oraclejdk9
+    script:
+    # https://github.com/sbt/sbt/pull/2951
+    - git clone https://github.com/retronym/java9-rt-export
+    - cd java9-rt-export/
+    - git checkout 1019a2873d057dd7214f4135e84283695728395d
+    - jdk_switcher use oraclejdk8
+    - sbt package
+    - jdk_switcher use oraclejdk9
+    - mkdir -p $HOME/.sbt/0.13/java9-rt-ext; java -jar target/java9-rt-export-*.jar $HOME/.sbt/0.13/java9-rt-ext/rt.jar
+    - jar tf $HOME/.sbt/0.13/java9-rt-ext/rt.jar | grep java/lang/Object
+    - cd ..
+    - echo "sbt.version=0.13.14-RC1" > project/build.properties
+    - wget https://raw.githubusercontent.com/paulp/sbt-extras/9ade5fa54914ca8aded44105bf4b9a60966f3ccd/sbt && chmod +x ./sbt
+    - ./sbt -Dscala.ext.dirs=$HOME/.sbt/0.13/java9-rt-ext ++$TRAVIS_SCALA_VERSION -J-Xmx4G test
